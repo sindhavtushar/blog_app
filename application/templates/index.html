@@ -5,5 +5,21 @@
   <h1>Blog Posts</h1>
   <p><a href="{{url_for('blog.user_profile')}}">Profile</a></p>
   <p> <a href="{{url_for('blog.register_user')}}">Register here.</a></p>
+  <br>
+  <h1>Blog Posts</h1>
+
+  <!-- {% for post in posts %}
+    <div style="border:1px solid #ccc; margin:10px; padding:10px;">
+      <h2>{{ post.title }}</h2>
+      <p>{{ post.content }}</p>
+      <small>
+        Author: {{ post.author.username }} |
+        Category: {{ post.category.name }}
+      </small>
+    </div>
+  {% else %}
+    <p>No posts found</p>
+  {% endfor %} -->
+
 </body>
 </html>

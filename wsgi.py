@@ -1,5 +1,7 @@
 # wsgi.py
 
-from application import create_app
+from dotenv import load_dotenv
+load_dotenv()
 
-application = create_app()
+from application import create_app
+app = create_app()
