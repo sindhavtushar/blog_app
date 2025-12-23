@@ -1,25 +1,28 @@
-<!DOCTYPE html>
-<html>
-<head><title>My Blog</title></head>
-<body>
-  <h1>Blog Posts</h1>
-  <p><a href="{{url_for('blog.user_profile')}}">Profile</a></p>
-  <p> <a href="{{url_for('blog.register_user')}}">Register here.</a></p>
-  <br>
-  <h1>Blog Posts</h1>
+{% extends "base.html" %}
 
-  <!-- {% for post in posts %}
-    <div style="border:1px solid #ccc; margin:10px; padding:10px;">
-      <h2>{{ post.title }}</h2>
-      <p>{{ post.content }}</p>
-      <small>
-        Author: {{ post.author.username }} |
-        Category: {{ post.category.name }}
-      </small>
+{% block title %}Home - Blog App{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="p-4 bg-white shadow-sm rounded">
+            <h2 class="mb-3">Welcome to Blog App</h2>
+            <p class="text-muted">
+                Discover the best new articles and perspectives on a wide range of topics. 
+                Our app brings curated content directly to you, 
+                making it easy to stay informed and inspired. Start exploring today!
+            </p>
+
+            <hr>
+
+            {% if not session.get('user_id') %}
+            <div class="mt-3">
+                <a href="{{ url_for('authentication.login') }}" class="btn btn-primary">Login</a>
+                <a href="{{ url_for('authentication.register') }}" class="btn btn-outline-secondary ms-2">Register</a>
+            </div>
+            {% else %}
+            {% endif %}
+        </div>
     </div>
-  {% else %}
-    <p>No posts found</p>
-  {% endfor %} -->
-
-</body>
-</html>
+</div>
+{% endblock %}

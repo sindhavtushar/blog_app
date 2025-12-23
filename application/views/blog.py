@@ -9,7 +9,7 @@ from application.database import db
 
 blog_bp = Blueprint("blog", __name__)
 
-@blog_bp.route('/')
+@blog_bp.route("/")
 def index():
     return render_template("index.html")
 
