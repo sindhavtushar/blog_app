@@ -1,18 +1,21 @@
+import random
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from application.helpers.auth_helpers import check_password, create_user, generate_token
+from application.models.db_tables import User
+from application.database import db
 from email.message import EmailMessage
 import os
 import smtplib
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
-
-from application.models.db_tables import User
-from application.database import db
 
 auth_bp = Blueprint("authentication", __name__)
 
-# ------------------------------------------
+login_manager = LoginManager()
+login_manager.login_view = "authentication.login"
 
-# SMTP HANDLER
+
+# ------------------- SMTP Email Helper -------------------
 def send_email(to_email, message, subject):
-
     EMAIL_ADDRESS = os.getenv('SENDER_EMAIL')
     EMAIL_PASSWORD = os.getenv('SENDER_PASSWORD')
 
@@ -20,210 +23,184 @@ def send_email(to_email, message, subject):
     msg['Subject'] = subject
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = to_email
-    
     msg.set_content(message)
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
         smtp.send_message(msg)
-        print(f"OTP is send to {to_email}")
+        print(f"OTP sent to {to_email}")
 
-# -----------------------------------------------------------------------------------
 
-# ================= REGISTER =================
+# ------------------- Flask-Login User Loader -------------------
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.query(User).get(int(user_id))
 
-@auth_bp.route('/register', methods=['GET', 'POST'])
+
+# ------------------- REGISTER -------------------
+# @auth_bp.route("/register", methods=["GET", "POST"])
+# def register():
+#     step = request.form.get("step", "1")
+#     message = None
+
+#     if request.method == "POST":
+#         # Step 1: Collect username/email/password
+#         if step == "1":
+#             username = request.form.get("username")
+#             email = request.form.get("email")
+#             password = request.form.get("password")
+
+#             existing_user = db.session.query(User).filter_by(email=email).first()
+#             if existing_user:
+#                 if existing_user.is_email_verified:
+#                     flash("Email already registered. Please login.", "info")
+#                     return redirect(url_for("authentication.login"))
+#                 else:
+#                     # Resend OTP
+#                     otp = existing_user.generate_otp(purpose="verify_email")
+#                     send_email(email, f"Your OTP is {otp}. It expires in 10 minutes.", "Verify Email OTP")
+#                     flash("OTP sent to your email.", "success")
+#                     return render_template("register.html", step="2", email=email)
+
+#             # Create new user
+#             new_user = User(username=username, email=email)
+#             new_user.set_password(password)  # assume you have a set_password method
+#             db.session.add(new_user)
+#             db.session.commit()
+
+#             otp = new_user.generate_otp(purpose="verify_email")
+#             send_email(email, f"Your OTP is {otp}. It expires in 10 minutes.", "Verify Email OTP")
+#             flash("OTP sent to your email.", "success")
+#             return render_template("register.html", step="2", email=email)
+
+#         # Step 2: Verify OTP
+#         elif step == "2":
+#             email = request.form.get("email")
+#             input_otp = request.form.get("otp")
+
+#             user = db.session.query(User).filter_by(email=email).first()
+#             if not user:
+#                 flash("User not found. Please register again.", "danger")
+#                 return redirect(url_for("authentication.register"))
+
+#             is_verified, msg = user.verify_otp(input_otp, purpose="verify_email")
+#             if not is_verified:
+#                 flash(msg, "danger")
+#                 return render_template("register.html", step="2", email=email)
+
+#             user.is_email_verified = True
+#             db.session.commit()
+#             flash("Email verified! You can now login.", "success")
+#             return redirect(url_for("authentication.login"))
+
+#     return render_template("register.html", step="1", message=message)
+
+# from application.helpers.auth_helpers import create_user, generate_token
+
+@auth_bp.route("/register", methods=["GET", "POST"])
 def register():
-    message = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        email = request.form.get("email")
+        password = request.form.get("password")
+        user = create_user(username, email, password)
 
-    # Default to step 1
-    step = session.get('step', 1)
-
-    if request.method == 'POST':
-        step = int(request.form.get('step', 1))
-
-        if step == 1:
-            username = request.form.get('username')
-            email = request.form.get('email')
-            password = request.form.get('password')
-
-            if db.email_exists(email):
-                verified = db.is_verified(email)
-                if not verified:
-                    user = db.get_user_by_email(email)
-                    otp = db.generate_otp(user['id'], purpose='verify_email')
-                    send_email(email, f"Your OTP is {otp}. It expires in 10 minutes.", "Email Verification OTP")
-                    session['email'] = email
-                    session['step'] = 2
-                    flash('OTP sent to your registered email.', 'success')
-                    return redirect(url_for('register'))
-                else:
-                    flash("User already registered and verified. Please login.", "info")
-                    return redirect(url_for('login'))
-
-            else:
-                success, result = db.register_user(username, email, password)
-                if success:
-                    user = db.get_user_by_email(email)
-                    otp = db.generate_otp(user['id'], purpose='verify_email')
-                    send_email(email, f"Your OTP is {otp}. It expires in 10 minutes.", "User Registration OTP")
-                    session['email'] = email
-                    session['step'] = 2
-                    flash('OTP sent to your registered email.', 'success')
-                    return redirect(url_for('register'))
-                else:
-                    message = result
-
-        elif step == 2:
-            email = session.get('email')
-            if not email:
-                flash("Session expired. Please start again.", "danger")
-                return redirect(url_for('register'))
-
-            user = db.get_user_by_email(email)
-            action = request.form.get('action', 'verify')
-
-            if action == 'resend':
-                otp = db.generate_otp(user['id'], purpose='verify_email')
-                send_email(email, f"Your new OTP is {otp}", "Resend OTP")
-                flash("OTP resent to your email.", "success")
-                session['step'] = 2
-                return redirect(url_for('register'))
-
-            elif action == 'verify':
-                input_otp = request.form.get('otp')
-                is_verified, message = db.verify_otp(user['id'], input_otp, purpose='verify_email')
-                if not is_verified:
-                    flash(message, "danger")
-                    session['step'] = 2
-                    return redirect(url_for('register'))
-
-                db.mark_user_verified(user['id'])
-                session.pop('email', None)
-                session.pop('step', None)
-                flash("Email verified successfully. Please login.", "success")
-                return redirect(url_for('login'))
-
-    return render_template('register.html', step=step, message=message)
+        token = generate_token(user, "email_verify")
+        # send token.email here...
+        flash("Account created! Verify your email.", "success")
+        return redirect(url_for("authentication.login"))
+    return render_template("register.html")
 
 
-@auth_bp.route('/register/back')
-def register_back():
-    session['step'] = 1
-    return redirect(url_for('register'))
+# ------------------- LOGIN -------------------
 
-# ================= LOGIN =================
 
-@auth_bp.route('/login', methods=['GET', 'POST'])
+# For demo purposes, we'll store OTPs in memory
+otp_store = {}
+
+@auth_bp.route("/login", methods=["GET", "POST"])
 def login():
+    step = request.args.get("step")  # can be None, 'forgot_email', 'forgot_otp', 'forgot_reset'
 
-    step = session.get('step')  # None, forgot_email, forgot_otp, forgot_reset
+    if request.method == "POST":
+        # ----------------- Default login -----------------
+        if step is None:
+            email = request.form.get("email")
+            password = request.form.get("password")
+            # user = db.session.query(User).filter_by(email=email).first()
 
-    # -------------------- GET --------------------
-    if request.method == 'GET':
-        # User clicked "Forgot password?"
-        if request.args.get('forgot') == '1':
-            session['step'] = 'forgot_email'
-            step = 'forgot_email'
+            user = db.session.query(User).filter_by(email=email).first()
+            if not user or not check_password(user, password):
+                flash("Invalid email or password", "danger")
 
-        return render_template('login.html', step=step)
+            if not user or not user.check_password(password):
+                flash("Invalid email or password.", "danger")
+                return render_template("login.html", step=None, email=email)
 
-    # -------------------- POST --------------------
+            if not user.is_email_verified:
+                flash("Please verify your email first.", "warning")
+                return render_template("login.html", step=None, email=email)
 
-    # ========== NORMAL LOGIN ==========
-    if step is None:
-        email = request.form.get('email')
-        password = request.form.get('password')
+            login_user(user)
+            flash("Login successful!", "success")
+            return redirect(url_for("blog.index"))
 
-        success, result = db.login_user(email, password)
+        # --------------- Forgot Password: Enter Email -----------------
+        elif step == "forgot_email":
+            email = request.form.get("email")
+            user = db.session.query(User).filter_by(email=email).first()
 
-        if not success:
-            flash(result, "danger")
-            return render_template('login.html', step=None)
+            if not user:
+                flash("Email not found.", "danger")
+                return render_template("login.html", step="forgot_email")
 
-        # Login success
-        session.clear()
-        session['user_id'] = result['id']
-        session['username'] = result['username']
-        session['email'] = result['email']
-        session['user_role'] = result['role']
+            # Generate a simple 6-digit OTP
+            otp = str(random.randint(100000, 999999))
+            otp_store[email] = otp  # Store OTP temporarily (replace with proper DB/email in real app)
+            flash(f"OTP sent to your email (demo: {otp})", "info")
+            return render_template("login.html", step="forgot_otp", email=email)
 
-        flash("Login successful 🎉", "success")
-        return redirect(url_for('dashboard'))
+        # --------------- OTP Verification -----------------
+        elif step == "forgot_otp":
+            email = request.form.get("email")
+            entered_otp = request.form.get("otp")
 
-    # ========== FORGOT PASSWORD : EMAIL ==========
-    elif step == 'forgot_email':
-        email = request.form.get('email')
+            if otp_store.get(email) != entered_otp:
+                flash("Invalid OTP. Try again.", "danger")
+                return render_template("login.html", step="forgot_otp", email=email)
 
-        user = db.get_user_by_email(email)
-        if not user:
-            flash("Email not registered", "danger")
-            return redirect(url_for('login'))
+            flash("OTP verified. You can reset your password now.", "success")
+            return render_template("login.html", step="forgot_reset", email=email)
 
-        # Save reset info
-        session['reset_user_id'] = user['id']
-        session['reset_email'] = user['email']
+        # --------------- Reset Password -----------------
+        elif step == "forgot_reset":
+            email = request.form.get("email")
+            password = request.form.get("password")
+            user = db.session.query(User).filter_by(email=email).first()
 
-        otp = db.generate_otp(user['id'], purpose='reset_password')
+            if not user:
+                flash("Something went wrong. Try again.", "danger")
+                return redirect(url_for("auth_bp.login"))
 
+            user.set_password(password)  # Make sure your User model has set_password method
+            db.session.commit()
+            flash("Password reset successful! You can now login.", "success")
+            otp_store.pop(email, None)
+            return redirect(url_for("auth_bp.login"))
 
-        subject = "Password Reset OTP"
-        message = f"Your OTP is {otp}. It expires in 10 minutes."
-        send_email(email, message, subject)
-
-        session['step'] = 'forgot_otp'
-        flash("OTP sent to your email", "success")
-        return redirect(url_for('login'))
-
-    # ========== FORGOT PASSWORD : OTP ==========
-    elif step == 'forgot_otp':
-        user_otp = request.form.get('otp')
-
-        user_id = session.get('reset_user_id')
-        if not user_id:
-            flash("Session expired. Please try again.", "danger")
-            session.pop('step', None)
-            return redirect(url_for('login'))
-
-
-        is_verified, message = db.verify_otp(
-            user_id=session['reset_user_id'],
-            input_otp=user_otp,
-            purpose='reset_password'
-        )
-
-        
-        if not is_verified:
-            flash(message, "danger")
-            session['step'] = 'forgot_otp'
-            return redirect(url_for('login'))
+    # ---------------- GET requests -----------------
+    return render_template("login.html", step=step)
 
 
-        session['step'] = 'forgot_reset'
-        flash("OTP verified successfully", "success")
-        return redirect(url_for('login'))
-
-    # ========== FORGOT PASSWORD : RESET ==========
-    elif step == 'forgot_reset':
-        password = request.form.get('password')
-        email = session.get('reset_email')
-
-        success, message = db.update_user_password(email, password)
-
-        # Clear reset session
-        session.pop('reset_user_id', None)
-        session.pop('reset_email', None)
-        session.pop('step', None)
-
-        flash("Password reset successful. Please login.", "success")
-        return redirect(url_for('login'))
-
-# ================= LOGOUT =================
-@auth_bp.route('/logout', methods=['GET', 'POST'])
+# ------------------- LOGOUT -------------------
+@auth_bp.route("/logout")
+@login_required
 def logout():
-    session.pop('user_id', None)
-    session.pop('user_role', None)
-    session.pop('username', None)
-    session.pop('email', None)
-    flash('Logout successfully!', 'success')
-    return redirect(url_for('home'))
+    logout_user()
+    flash("Logged out successfully.", "success")
+    return redirect(url_for("blog.index"))
+
+@auth_bp.route("/logout")
+@login_required
+def forgot_password():
+    return f'Forgot password'

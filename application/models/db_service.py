@@ -1,247 +1,219 @@
-# application/mdodels/db_service.py
-
-
+from sqlalchemy.exc import IntegrityError
 from application.database import db
-from application.models.db_tables import Category, User
+from application.models.db_tables import (
+    User, Category, Post, Tag, Comment,
+    Like, AuthToken, Session
+)
+from datetime import datetime
 
 
-from werkzeug.security import generate_password_hash, check_password_hash
-import random
-from datetime import datetime, timedelta
+# USER SERVICES
 
-
-def email_exists(email):
-    [query]("SELECT 1 FROM users WHERE email = %s", (email,))
-    return  is not None
-
-def get_user_by_email(email):
-    [query]("""
-        SELECT id, username, email
-        FROM users
-        WHERE email = %s
-    """, (email,))
-    return 
-
-def get_user_id(email):
-    [query]("SELECT id FROM users WHERE email = %s", (email,))
-    row = 
-    return row['id'] if row else None
-
-def is_verified(email):
-    [query]("SELECT is_verified FROM users WHERE email = %s", (email,))
-    row = 
-    return row['is_verified'] if row else None
-
-def insert_user(username, email, password, role='user'):
-    hashed_pw = generate_password_hash(password)
+def create_user(id, username, email, password_hash, is_admin=False):
     try:
-        [query]("""
-            INSERT INTO users (username, email, password_hash, role)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, username, email, role, is_verified
-        """, (username, email, hashed_pw, role))
-        conn.commit()
-        return 
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
-        return None
-
-def get_users_by_role(role, requester_role):
-    """
-    Fetch users filtered by role, only if requester is admin or senior.
-    
-    :param role: Role to filter ('admin', 'senior', 'user')
-    :param requester_role: Role of the user making the request
-    :return: List of users matching the role
-    """
-    if requester_role not in ('admin', 'senior'):
-        return []  # Only admin or senior can fetch users
-
-    [query]("""
-        SELECT id, username, email, role, is_verified, created_at
-        FROM users
-        WHERE role = %s
-        ORDER BY username
-    """, (role,))
-    
-    return all()
-
-def mark_user_verified(user_id):
-        """
-        Mark a user as verified.
-        """
-        try:
-            query = "UPDATE users SET is_verified = TRUE WHERE id = %s"
-            [query](query, (user_id,))
-            conn.commit()
-            return True
-        except Exception as e:
-            conn.rollback()
-            print(f"[DB ERROR] mark_user_verified: {e}")
-            return False
-
-def register_user(username, email, password):
-    if email_exists(email):
-        return False, "Email already registered"
-
-    user = insert_user(username, email, password)
-    if user:
-        return True, user
-    return False, "Registration failed"
-
-def login_user(email, password):
-    [query]("""
-        SELECT id, username, email, password_hash, role, is_verified
-        FROM users
-        WHERE email = %s
-    """, (email,))
-    user = 
-    if not user:
-        return False, "User not found"
-    if not user["is_verified"]:
-        return False, "Account not verified"
-    if not check_password_hash(user["password_hash"], password):
-        return False, "Invalid password"
-    return True, {
-        "id": user["id"],
-        "username": user["username"],
-        "email": user["email"],
-        "role": user["role"]
-    }
-
-def update_user_password(email, password):
-    hashed_password = generate_password_hash(password)
-
-    try:
-        [query]("""
-            UPDATE users
-            SET password_hash = %s
-            WHERE email = %s;
-        """, (hashed_password, email))
-
-        conn.commit()  # ✅ VERY IMPORTANT
-
-        if cursor.rowcount == 0:
-            return False, "User not found"
-
-        return True, "Password updated successfully"
-
-    except psycopg2.Error as e:
-        conn.rollback()
-        return False, f"Database error: {e}"
-
-    except Exception as e:
-        conn.rollback()
-        return False, f"Unexpected error: {e}"
-
-
-# OTP HELPERS
-
-def generate_otp(user_id, purpose='verify_email', expiry_minutes=10):
-    # otp = ''.join(random.choices(string.digits, k=6))
-    # otp_hash = generate_password_hash(otp)
-
-    otp = str(random.randint(100000, 999999))
-    otp_hash = generate_password_hash(otp)
-
-    expires_at = datetime.now() + timedelta(minutes=expiry_minutes)
-
-    [query]("""
-        INSERT INTO user_otp (user_id, otp_hash, purpose, expires_at)
-        VALUES (%s, %s, %s, %s)
-        RETURNING id
-    """, (user_id, otp_hash, purpose, expires_at))
-    conn.commit()
-    return otp  # Send this to user via email/SMS
-
-def verify_otp(user_id, input_otp, purpose='verify_email'):
-    input_otp = str(input_otp).strip()
-    [query]("""
-        SELECT id, otp_hash, expires_at, is_used
-        FROM user_otp
-        WHERE user_id = %s AND purpose = %s AND is_used = FALSE
-        ORDER BY created_at DESC
-        LIMIT 1
-    """, (user_id, purpose))
-    row = 
-    if not row:
-        return False, "No OTP found"
-    if datetime.now() > row['expires_at']:
-        return False, "OTP expired"
-    if not check_password_hash(row['otp_hash'], input_otp):
-        return False, "Invalid OTP"
-
-    # Mark OTP used
-    [query]("UPDATE user_otp SET is_used = TRUE WHERE id = %s", (row['id'],))
-    conn.commit()
-    if purpose == 'verify_email':
-        [query](
-            "UPDATE users SET is_verified = TRUE WHERE id = %s",
-            (user_id,)
-        )
-        conn.commit()
-    return True, "OTP verified"
-
-
-# ADMIN / SENIOR HELPERS
-
-def create_admin(username, email, password):
-    return insert_user(username, email, password, role='admin')
-
-def create_senior(username, email, password):
-    return insert_user(username, email, password, role='senior')
-
-def list_users(requester_role):
-    if requester_role not in ('admin', 'senior'):
-        return []
-    [query]("""
-        SELECT id, username, email, role, is_verified, created_at
-        FROM users
-        ORDER BY role DESC, username
-    """)
-    return all()
-
-
-# User operations ----------------------------------------------------------------------------------
-
-# check user exists or not
-# get user by email
-# delete specific user (Admin only)
-# update_user
-
-# Authentication Functionalities ---------------------------------------------------------------------
-
-# register user
-# login user
-# reset password
-# verify user
-
-# Blog functionalities 
-
-# add blog
-# update blog
-# delete blog
-
-
-
-
-
-def create_user(username, email, password_hash, is_admin=False):
-    try:
-        new_user = User(
+        user = User(
+            id=id,
             username=username,
             email=email,
             password_hash=password_hash,
             is_admin=is_admin
         )
-        db.session.add(new_user)
+        db.session.add(user)
         db.session.commit()
-        return new_user
-    except Exception as e:
+        return user
+    except IntegrityError:
         db.session.rollback()
-        print(f"Error creating user: {e}")
         return None
-    
+
+
+def get_user_by_id(user_id):
+    return db.session.query(User).filter_by(id=user_id).first()
+
+
+def get_user_by_email(email):
+    return db.session.query(User).filter_by(email=email).first()
+
+
+def verify_user_email(user):
+    user.is_email_verified = True
+    db.session.commit()
+    return user
 
 
 
+# CATEGORY SERVICES
+
+def create_category(name, description=None):
+    category = Category(name=name, description=description)
+    db.session.add(category)
+    db.session.commit()
+    return category
+
+
+def get_all_categories():
+    return db.session.query(Category).all()
+
+
+def get_category_by_id(category_id):
+    return db.session.query(Category).filter_by(id=category_id).first()
+
+
+
+# POST SERVICES
+
+def create_post(title, content, author_id, category_id=None, is_published=False):
+    post = Post(
+        title=title,
+        content=content,
+        author_id=author_id,
+        category_id=category_id,
+        is_published=is_published
+    )
+    db.session.add(post)
+    db.session.commit()
+    return post
+
+
+def get_post_by_id(post_id):
+    return db.session.query(Post).filter_by(id=post_id).first()
+
+
+def get_all_posts(published_only=False):
+    query = db.session.query(Post)
+    if published_only:
+        query = query.filter(Post.is_published.is_(True))
+    return query.order_by(Post.created_at.desc()).all()
+
+
+def update_post(post, **kwargs):
+    for key, value in kwargs.items():
+        if hasattr(post, key):
+            setattr(post, key, value)
+    post.updated_at = datetime.utcnow()
+    db.session.commit()
+    return post
+
+
+def delete_post(post):
+    db.session.delete(post)
+    db.session.commit()
+
+
+
+# TAG SERVICES
+
+def get_or_create_tag(name):
+    tag = db.session.query(Tag).filter_by(name=name).first()
+    if not tag:
+        tag = Tag(name=name)
+        db.session.add(tag)
+        db.session.commit()
+    return tag
+
+
+def add_tags_to_post(post, tag_names):
+    for name in tag_names:
+        tag = get_or_create_tag(name)
+        if tag not in post.tags:
+            post.tags.append(tag)
+    db.session.commit()
+    return post
+
+
+
+# COMMENT SERVICES
+
+def add_comment(post_id, user_id, content):
+    comment = Comment(
+        post_id=post_id,
+        user_id=user_id,
+        content=content
+    )
+    db.session.add(comment)
+    db.session.commit()
+    return comment
+
+
+def get_comments_for_post(post_id):
+    return db.session.query(Comment).filter_by(post_id=post_id).all()
+
+
+
+# LIKE SERVICES
+
+def like_post(user_id, post_id):
+    try:
+        like = Like(user_id=user_id, post_id=post_id)
+        db.session.add(like)
+        db.session.commit()
+        return True
+    except IntegrityError:
+        db.session.rollback()
+        return False
+
+
+def unlike_post(user_id, post_id):
+    like = db.session.query(Like).filter_by(
+        user_id=user_id,
+        post_id=post_id
+    ).first()
+    if like:
+        db.session.delete(like)
+        db.session.commit()
+        return True
+    return False
+
+
+
+# AUTH TOKEN SERVICES
+
+def create_auth_token(user_id, token, token_type, expires_at):
+    auth_token = AuthToken(
+        user_id=user_id,
+        token=token,
+        type=token_type,
+        expires_at=expires_at
+    )
+    db.session.add(auth_token)
+    db.session.commit()
+    return auth_token
+
+
+def get_valid_token(token, token_type):
+    return db.session.query(AuthToken).filter(
+        AuthToken.token == token,
+        AuthToken.type == token_type,
+        AuthToken.is_used.is_(False),
+        AuthToken.expires_at > datetime.utcnow()
+    ).first()
+
+
+def mark_token_used(auth_token):
+    auth_token.is_used = True
+    db.session.commit()
+
+
+
+# SESSION SERVICES
+
+def create_session(user_id, token, expires_at):
+    session = Session(
+        user_id=user_id,
+        token=token,
+        expires_at=expires_at
+    )
+    db.session.add(session)
+    db.session.commit()
+    return session
+
+
+def get_session(token):
+    return db.session.query(Session).filter(
+        Session.token == token,
+        Session.expires_at > datetime.utcnow()
+    ).first()
+
+
+def delete_session(session):
+    db.session.delete(session)
+    db.session.commit()

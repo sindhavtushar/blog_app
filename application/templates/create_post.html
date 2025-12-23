@@ -1,27 +1,37 @@
-<h1>Create New Post</h1>
+{% extends "base.html" %}
+{% block title %}Create Post{% endblock %}
 
-<form method="POST" action="/create_post">
-    <!-- CSRF token (Optional if you add Flask-WTF later) -->
-    
-    <label>Title:</label><br>
-    <input type="text" name="title" placeholder="Enter post title" required><br><br>
+{% block content %}
+<h2 class="mb-4">Create New Post</h2>
 
-    <label>Content:</label><br>
-    <textarea name="content" rows="6" cols="50" placeholder="Write your content here..." required></textarea><br><br>
+<form method="POST">
+    <div class="mb-3">
+        <label class="form-label">Title</label>
+        <input type="text" name="title" class="form-control" required>
+    </div>
 
-    <label>Category:</label><br>
-    <select name="category_id" required>
-        <option value="" disabled selected>Select Category</option>
-        {% for category in categories %}
-            <option value="{{ category.id }}">{{ category.name }}</option>
-        {% endfor %}
-    </select><br><br>
+    <div class="mb-3">
+        <label class="form-label">Category</label>
+        <select name="category_id" class="form-select">
+            <option value="">-- Select Category --</option>
+            {% for category in categories %}
+                <option value="{{ category.id }}">{{ category.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
 
-    <label>Publish now?</label>
-    <input type="checkbox" name="is_published" value="1"><br><br>
+    <div class="mb-3">
+        <label class="form-label">Tags (comma separated)</label>
+        <input type="text" name="tags" class="form-control"
+               placeholder="flask, python, web">
+    </div>
 
-    <button type="submit">Create Post</button>
+    <div class="mb-3">
+        <label class="form-label">Content</label>
+        <textarea name="content" rows="8" class="form-control" required></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-success">Publish</button>
+    <a href="{{ url_for('blog.index') }}" class="btn btn-secondary">Cancel</a>
 </form>
-
-<!-- Optional: link to homepage -->
-<p><a href="{{ url_for('blog.index') }}">Back to Homepage</a></p>
+{% endblock %}

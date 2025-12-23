@@ -4,9 +4,8 @@
 
 {% block content %}
 <div class="d-flex justify-content-center align-items-start py-5">
-    <div class="card shadow-sm" style="width: 100%; max-width: 450px;">
+    <div class="card shadow-sm w-100" style="max-width: 450px;">
         <div class="card-body p-4">
-
             <h3 class="mb-4 text-center">Login</h3>
 
             {% if step is none %}
@@ -14,7 +13,7 @@
             <form method="POST">
                 <div class="mb-3">
                     <label for="email" class="form-label">Email</label>
-                    <input type="text" id="email" name="email" class="form-control" required value="{{ email if email }}">
+                    <input type="email" id="email" name="email" class="form-control" required value="{{ email if email }}">
                 </div>
                 <div class="mb-3">
                     <label for="password" class="form-label">Password</label>
@@ -24,7 +23,7 @@
             </form>
 
             <div class="text-center mt-3">
-                <a href="{{ url_for('authentication.login', forgot=1) }}">Forgot Password?</a>
+                <a href="{{ url_for('authentication.login', step='forgot_email') }}">Forgot Password?</a>
             </div>
             <div class="text-center mt-2">
                 New user? <a href="{{ url_for('authentication.register') }}">Register here</a>
@@ -32,7 +31,7 @@
 
             {% elif step == 'forgot_email' %}
             <!-- ---------- Forgot Password Email Form ---------- -->
-            <h5 class="mb-3">Forgot Password</h5>
+            <h5 class="mb-3 text-center">Forgot Password</h5>
             <form method="POST">
                 <div class="mb-3">
                     <label for="email" class="form-label">Enter your email</label>
@@ -43,7 +42,7 @@
 
             {% elif step == 'forgot_otp' %}
             <!-- ---------- OTP Verification Form ---------- -->
-            <h5 class="mb-3">Verify OTP</h5>
+            <h5 class="mb-3 text-center">Verify OTP</h5>
             <form method="POST">
                 <div class="mb-3">
                     <label for="otp" class="form-label">Enter OTP</label>
@@ -54,7 +53,7 @@
 
             {% elif step == 'forgot_reset' %}
             <!-- ---------- Reset Password Form ---------- -->
-            <h5 class="mb-3">Reset Password</h5>
+            <h5 class="mb-3 text-center">Reset Password</h5>
             <form method="POST">
                 <div class="mb-3">
                     <label for="password" class="form-label">Enter new password</label>
